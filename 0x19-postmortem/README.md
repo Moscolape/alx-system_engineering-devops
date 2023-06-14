@@ -1,65 +1,63 @@
-# Postmortem
+# Postmortem: Outage on ABC Web Application
 
-Upon the release of ALX's System Engineering & DevOps project 0x19,
-approximately 06:00 West African Time (WAT) here in Nigeria, an outage occurred on an isolated
-Ubuntu 14.04 container running an Apache web server. GET requests on the server led to
-`500 Internal Server Error`'s, when the expected response was an HTML file defining a
-simple Holberton WordPress site.
+I have always dreaded debugging the same way I dreaded dogs. This outage scared the hell out of me when it was first spotted that we assumed a lot of false causes.
 
-## Debugging Process
+Issue Summary:
+Duration: May 12, 2023, 08:00 AM to May 13, 2023, 2:00 PM (UTC)
+Impact: The ABC web application experienced intermittent downtime and severe performance degradation, resulting in users being unable to access key features. Approximately 75% of users were affected during the outage period.
 
-Bug debugger Brennan (BDB... as in my actual initials... made that up on the spot, pretty
-good, huh?) encountered the issue upon opening the project and being, well, instructed to
-address it, roughly 19:20 PST. He promptly proceeded to undergo solving the problem.
+Root Cause:
+The root cause of the outage was identified as a database connection leak due to a misconfigured connection pooling mechanism. This caused an exhaustion of available connections, leading to a cascading failure in the application's database layer.
 
-1. Checked running processes using `ps aux`. Two `apache2` processes - `root` and `www-data` -
-were properly running.
+Timeline:
+- May 12, 2023, 08:00 AM (UTC): The issue was initially detected by an automated monitoring alert, indicating high response times and a spike in database connection errors.
+- Upon receiving the alert, the on-call engineer investigated the issue and noticed a significant increase in the number of open database connections.
+- Actions were taken to investigate the system components involved, including the application servers, load balancers, and the database cluster.
+- The assumption was made that the load balancer was unable to distribute requests effectively, leading to resource exhaustion.
+- The incident was escalated to the DevOps team and database administrators for further analysis and resolution.
 
-2. Looked in the `sites-available` folder of the `/etc/apache2/` directory. Determined that
-the web server was serving content located in `/var/www/html/`.
+Misleading Investigation/Debugging Paths:
+During the initial investigation, the focus was primarily on the load balancer as a potential bottleneck. Scaling up the load balancer capacity was attempted, but it did not alleviate the issue. Additionally, certain database optimization strategies were explored, such as query tuning and index optimization, based on a preliminary assumption of inefficient queries causing the slowdown. However, these attempts did not resolve the underlying problem.
 
-3. In one terminal, ran `strace` on the PID of the `root` Apache process. In another, curled
-the server. Expected great things... only to be disappointed. `strace` gave no useful
-information.
+Escalation and Resolution:
+As the investigation progressed, the DevOps team and database administrators realized that the issue stemmed from a misconfigured connection pooling mechanism. Specifically, the connection pooling settings were set too low, leading to connections not being released properly. This resulted in a continuous accumulation of open connections, eventually exhausting the available pool.
 
-4. Repeated step 3, except on the PID of the `www-data` process. Kept expectations lower this
-time... but was rewarded! `strace` revelead an `-1 ENOENT (No such file or directory)` error
-occurring upon an attempt to access the file `/var/www/html/wp-includes/class-wp-locale.phpp`.
+To resolve the issue, the following steps were taken:
+1. The connection pooling configuration was adjusted to increase the maximum number of connections and optimize connection reuse.
+2. A script was developed and executed to release all existing database connections and ensure the system returned to a healthy state.
+3. Database connection monitoring was enhanced to provide real-time visibility into connection usage and detect potential leaks proactively.
 
-5. Looked through files in the `/var/www/html/` directory one-by-one, using Vim pattern
-matching to try and locate the erroneous `.phpp` file extension. Located it in the
-`wp-settings.php` file. (Line 137, `require_once( ABSPATH . WPINC . '/class-wp-locale.php' );`).
+Root Cause and Resolution:
+The root cause was a misconfigured connection pooling mechanism, leading to a database connection leak. This caused an exhaustion of available connections, resulting in degraded performance and intermittent outages.
 
-6. Removed the trailing `p` from the line.
+The issue was fixed by adjusting the connection pooling configuration and executing a script to release existing connections. This resolved the immediate problem and restored normal application functionality.
 
-7. Tested another `curl` on the server. 200 A-ok!
+Corrective and Preventative Measures:
+To prevent similar incidents in the future, the following measures will be implemented:
+1. Conduct a comprehensive review of connection pooling configurations and ensure they align with best practices.
+2. Implement automated monitoring and alerting systems to detect abnormal database connection behavior promptly.
+3. Perform regular load testing and capacity planning exercises to identify any potential scalability issues before they impact users.
+4. Improve incident response procedures by involving the appropriate teams at an early stage to expedite the resolution process.
+5. Document the learnings from this incident and share them with the engineering and operations teams to enhance overall system understanding.
 
-8. Wrote a Puppet manifest to automate fixing of the error.
+Tasks to Address the Issue:
+1. Update connection pooling configuration with recommended settings.
+2. Implement automated connection pool monitoring and alerting.
+3. Conduct load testing to validate system scalability.
+4. Review and update incident response procedures.
+5. Create a postmortem report for internal knowledge sharing.
 
-## Summation
+By implementing these corrective and preventative measures, we aim to enhance the stability and reliability of the ABC web application, providing a seamless user experience and minimizing the impact of future outages.
 
-In short, a typo. Gotta love'em. In full, the WordPress app was encountering a critical
-error in `wp-settings.php` when tyring to load the file `class-wp-locale.phpp`. The correct
-file name, located in the `wp-content` directory of the application folder, was
-`class-wp-locale.php`.
+Conclusion:
+The outage on the ABC web application was caused by a misconfigured connection pooling mechanism, leading to a database connection leak. The issue was initially misdiagnosed as a load balancer bottleneck and inefficient queries, resulting in misleading investigation paths. Once the root cause was identified, the connection pooling configuration was adjusted, and a script was executed to release existing connections, resolving the problem.
 
-Patch involved a simple fix on the typo, removing the trailing `p`.
+To prevent similar incidents, corrective measures such as reviewing and optimizing connection pooling configurations, implementing automated monitoring, and conducting load testing will be undertaken. Incident response procedures will also be improved, and a postmortem report will be created for knowledge sharing.
 
-## Prevention
+By learning from this incident and implementing these measures, we aim to strengthen the resilience of the ABC web application, ensuring high availability and optimal performance for our users.
 
-This outage was not a web server error, but an application error. To prevent such outages
-moving forward, please keep the following in mind.
+We apologize for any inconvenience caused and appreciate your understanding and support during this outage. If you have any further questions or concerns, please don't hesitate to reach out to our support team.
 
-* Test! Test test test. Test the application before deploying. This error would have arisen
-and could have been addressed earlier had the app been tested.
+Thank you,
 
-* Status monitoring. Enable some uptime-monitoring service such as
-[UptimeRobot](./https://uptimerobot.com/) to alert instantly upon outage of the website.
-
-Note that in response to this error, I wrote a Puppet manifest
-[0-strace_is_your_friend.pp](https://github.com/bdbaraban/holberton-system_engineering-devops/blob/master/0x17-web_stack_debugging_3/0-strace_is_your_friend.pp)
-to automate fixing of any such identitical errors should they occur in the future. The manifest
-replaces any `phpp` extensions in the file `/var/www/html/wp-settings.php` with `php`.
-
-But of course, it will never occur again, because we're programmers, and we never make
-errors! :wink:
+The ABC Web Application Team
